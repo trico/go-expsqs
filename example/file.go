@@ -1,31 +1,27 @@
 package main
 
 import (
+	"bufio"
+	"bytes"
+	"encoding/csv"
 	"encoding/json"
 	"github.com/trico/sqs"
-	"io"
 	"log"
 	"os"
 )
 
-type CsvFormater struct {
-	to io.Writer
-}
+func Printo(msg *sqs.Message) ([]byte, error) {
+	b, _ := json.Marshal(*msg.Body)
 
-func (c *CsvFormater) Write(p []byte) (n int, err error) {
+	var ba bytes.Buffer
+	buf := bufio.NewWriter(&ba)
 
-	log.Print(string(p))
-	var s string
-	if err := json.Unmarshal(p, &s); err != nil {
-		log.Print(err)
-		return 0, err
-	}
+	_ = csv.NewWriter(buf)
 
-	c.to.Write([]byte(s))
+	log.Print(b)
+	log.Print(ba.Bytes())
 
-	log.Print(s)
-
-	return len(p), nil
+	return ba.Bytes(), nil
 }
 
 func main() {
@@ -33,11 +29,9 @@ func main() {
 		QueueName: "test",
 	})
 
-	file, _ := os.Create("test.csv")
-
-	w := &CsvFormater{to: file}
-
 	producer.Start()
 
-	producer.Write(w)
+	file, _ := os.Create("test.csv")
+
+	producer.Write(file, sqs.HandlerFunc(Printo))
 }
