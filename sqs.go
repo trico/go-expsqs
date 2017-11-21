@@ -9,19 +9,28 @@ import (
 
 type Consumer struct {
 	Config
-	records chan *UnformatedMessage
+	records chan *s.ReceiveMessageOutput
 }
 
-type UnformatedMessage struct {
-	*s.ReceiveMessageOutput
-	done bool
+type Message struct {
+	*s.Message
+}
+
+type HandlerFunc func(msg *Message) ([]byte, error)
+
+func (f HandlerFunc) HandleMessage(msg *Message) ([]byte, error) {
+	return f(msg)
+}
+
+type Handler interface {
+	HandleMessage(msg *Message) ([]byte, error)
 }
 
 func New(config Config) *Consumer {
 	config.defaults()
 	return &Consumer{
 		Config:  config,
-		records: make(chan *UnformatedMessage),
+		records: make(chan *s.ReceiveMessageOutput),
 	}
 }
 
@@ -37,35 +46,21 @@ func (c *Consumer) Get() {
 	}
 
 	for {
-		log.Printf("worker: Start polling from queue %s", c.QueueName)
+		log.Printf("Start %d seconds circle from queue %s", c.WaitTimeSeconds, c.QueueName)
 		output, err := c.Client.ReceiveMessage(options)
 
 		if err != nil {
 			panic(err)
 		}
 
-		c.records <- &UnformatedMessage{output, false}
+		c.records <- output
 	}
 }
 
-func (r *UnformatedMessage) Read(p []byte) (n int, err error) {
-	if r.done {
-		return 0, io.EOF
-	}
-
-	for i, b := range []byte(r.GoString()) {
-		p[i] = b
-	}
-
-	r.done = true
-
-	return len(r.GoString()), nil
-}
-
-func (c *Consumer) DeleteMessage(message *UnformatedMessage) {
+func (c *Consumer) DeleteMessage(message *s.Message) {
 	_, err := c.Client.DeleteMessage(&s.DeleteMessageInput{
 		QueueUrl:      &c.QueueUrl,
-		ReceiptHandle: message.Messages[0].ReceiptHandle,
+		ReceiptHandle: message.ReceiptHandle,
 	})
 
 	if err != nil {
@@ -73,14 +68,19 @@ func (c *Consumer) DeleteMessage(message *UnformatedMessage) {
 	}
 }
 
-func (c *Consumer) Write(b io.Writer) {
+func (c *Consumer) Write(b io.Writer, h Handler) {
 	for {
 		select {
 		case record := <-c.records:
 
 			if len(record.Messages) > 0 {
-				c.DeleteMessage(record)
-				io.Copy(b, record)
+				for _, message := range record.Messages {
+					c.DeleteMessage(message)
+
+					r, _ := h.HandleMessage(&Message{message})
+
+					b.Write(r)
+				}
 			}
 		default:
 			time.Sleep(50 * time.Millisecond)
