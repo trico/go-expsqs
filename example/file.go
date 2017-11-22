@@ -1,27 +1,29 @@
 package main
 
 import (
-	"bufio"
-	"bytes"
-	"encoding/csv"
 	"encoding/json"
 	"github.com/trico/sqs"
+	"io"
 	"log"
 	"os"
 )
 
 func Printo(msg *sqs.Message) ([]byte, error) {
-	b, _ := json.Marshal(*msg.Body)
+	var element map[string]interface{}
+	var line string
 
-	var ba bytes.Buffer
-	buf := bufio.NewWriter(&ba)
+	err := json.Unmarshal([]byte(*msg.Body), &element)
 
-	_ = csv.NewWriter(buf)
+	if err != nil {
+		log.Fatalln("error:", err)
+	}
 
-	log.Print(b)
-	log.Print(ba.Bytes())
+	line += element["a"].(string)
+	line += ";"
+	line += "1"
+	line += "\n"
 
-	return ba.Bytes(), nil
+	return []byte(line), nil
 }
 
 func main() {
@@ -33,5 +35,7 @@ func main() {
 
 	file, _ := os.Create("test.csv")
 
-	producer.Write(file, sqs.HandlerFunc(Printo))
+	multi := io.MultiWriter(file, os.Stdout)
+
+	producer.Write(multi, sqs.HandlerFunc(Printo))
 }
