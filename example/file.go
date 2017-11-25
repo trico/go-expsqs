@@ -1,16 +1,22 @@
 package main
 
 import (
+	"encoding/csv"
 	"encoding/json"
+	"fmt"
 	"github.com/trico/sqs"
-	"io"
 	"log"
 	"os"
 )
 
-func Printo(msg *sqs.Message) ([]byte, error) {
+type CsvWriter struct {
+	file    *csv.Writer
+	records chan []string
+}
+
+func (c *CsvWriter) Printo(msg *sqs.Message) error {
 	var element map[string]interface{}
-	var line string
+	var line []string
 
 	err := json.Unmarshal([]byte(*msg.Body), &element)
 
@@ -18,24 +24,53 @@ func Printo(msg *sqs.Message) ([]byte, error) {
 		log.Fatalln("error:", err)
 	}
 
-	line += element["a"].(string)
-	line += ";"
-	line += "1"
-	line += "\n"
+	line = append(line, element["socas"].(string))
+	line = append(line, "cosas")
 
-	return []byte(line), nil
+	fmt.Println(line)
+
+	c.records <- line
+
+	return nil
+}
+
+func (c *CsvWriter) populate() {
+	fmt.Print(4)
+
+	for {
+		select {
+		case record := <-c.records:
+			c.file.Write(record)
+		}
+	}
 }
 
 func main() {
-	producer := sqs.New(sqs.Config{
+	file, err := os.Create("test.csv")
+
+	defer file.Close()
+
+	if err != nil {
+		log.Fatalln("error", err)
+	}
+
+	r := csv.NewWriter(file)
+
+	csv := &CsvWriter{
+		r,
+		make(chan []string),
+	}
+
+	log.Println(1)
+
+	reader := sqs.New(sqs.Config{
 		QueueName: "test",
+		Handler:   sqs.HandlerFunc(csv.Printo),
 	})
 
-	producer.Start()
+	go reader.Start()
 
-	file, _ := os.Create("test.csv")
-
-	multi := io.MultiWriter(file, os.Stdout)
-
-	producer.Write(multi, sqs.HandlerFunc(Printo))
+	for {
+		csv.populate()
+	}
 }
