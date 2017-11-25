@@ -8,7 +8,15 @@ import (
 	"log"
 )
 
-const ()
+type HandlerFunc func(msg *Message) error
+
+func (f HandlerFunc) HandleMessage(msg *Message) error {
+	return f(msg)
+}
+
+type Handler interface {
+	HandleMessage(msg *Message) error
+}
 
 type Config struct {
 	QueueName         string
@@ -17,12 +25,13 @@ type Config struct {
 	QueueUrl          string
 	WaitTimeSeconds   int64
 	VisibilityTimeout int64
+	Handler           HandlerFunc
 }
 
 func (c *Config) defaults() {
 	c.Client = s.New(session.New(aws.NewConfig()))
 	c.QueueUrl = c.queueUrl(c.QueueName)
-	c.WaitTimeSeconds = 10
+	c.WaitTimeSeconds = 20
 	c.VisibilityTimeout = 10
 	c.Region = "eu-west-1"
 }
