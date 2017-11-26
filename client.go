@@ -6,6 +6,7 @@ import (
 	s "github.com/aws/aws-sdk-go/service/sqs"
 	"github.com/aws/aws-sdk-go/service/sqs/sqsiface"
 	"log"
+	"time"
 )
 
 type HandlerFunc func(msg *Message) error
@@ -26,14 +27,29 @@ type Config struct {
 	WaitTimeSeconds   int64
 	VisibilityTimeout int64
 	Handler           HandlerFunc
+	MessageLimit      int64
+	MessageTimeLimit  time.Duration
 }
 
 func (c *Config) defaults() {
 	c.Client = s.New(session.New(aws.NewConfig()))
 	c.QueueUrl = c.queueUrl(c.QueueName)
-	c.WaitTimeSeconds = 20
-	c.VisibilityTimeout = 10
-	c.Region = "eu-west-1"
+
+	if c.WaitTimeSeconds == 0 {
+		c.WaitTimeSeconds = 20
+	}
+
+	if c.VisibilityTimeout == 0 {
+		c.VisibilityTimeout = 10
+	}
+
+	if c.Region == "" {
+		c.Region = "eu-west-1"
+	}
+
+	if c.MessageTimeLimit == 0 {
+		c.MessageTimeLimit = time.Second
+	}
 }
 
 func (c *Config) queueUrl(name string) string {
