@@ -3,7 +3,6 @@ package main
 import (
 	"encoding/csv"
 	"encoding/json"
-	"fmt"
 	"github.com/trico/sqs"
 	"log"
 	"os"
@@ -11,7 +10,7 @@ import (
 
 type CsvWriter struct {
 	file    *csv.Writer
-	records chan []string
+	records [][]string
 }
 
 func (c *CsvWriter) Printo(msg *sqs.Message) error {
@@ -27,22 +26,14 @@ func (c *CsvWriter) Printo(msg *sqs.Message) error {
 	line = append(line, element["socas"].(string))
 	line = append(line, "cosas")
 
-	fmt.Println(line)
-
-	c.records <- line
+	c.records = append(c.records, line)
 
 	return nil
 }
 
-func (c *CsvWriter) populate() {
-	fmt.Print(4)
-
-	for {
-		select {
-		case record := <-c.records:
-			c.file.Write(record)
-		}
-	}
+func (c *CsvWriter) Write() {
+	c.file.WriteAll(c.records)
+	c.file.Flush()
 }
 
 func main() {
@@ -58,19 +49,17 @@ func main() {
 
 	csv := &CsvWriter{
 		r,
-		make(chan []string),
+		[][]string{},
 	}
-
-	log.Println(1)
 
 	reader := sqs.New(sqs.Config{
-		QueueName: "test",
-		Handler:   sqs.HandlerFunc(csv.Printo),
+		QueueName:        "test",
+		Handler:          sqs.HandlerFunc(csv.Printo),
+		MessageLimit:     2,
+		MessageTimeLimit: 10,
 	})
 
-	go reader.Start()
+	reader.Start()
 
-	for {
-		csv.populate()
-	}
+	csv.Write()
 }
